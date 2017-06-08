@@ -1,6 +1,7 @@
 from tables import *
 import numpy
 import LogParseFunc
+import os
 
 class Molecule(IsDescription):
     name      = StringCol(32)
@@ -24,3 +25,12 @@ def debugDisplay():
     table = dataFile.root.Molecules
     for row in table:
         print(row['name'])
+
+if os.path.isfile('./Database.h5') == False:
+    createDatabase()
+else:
+    dataFile = open_file('Database.h5',mode='a')
+    table = dataFile.root.Molecules
+
+string = LogParseFunc.jsonParse('LOG.log')
+insertMolecule(string,table)
