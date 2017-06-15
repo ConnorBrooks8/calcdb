@@ -1,25 +1,33 @@
+"""
+Various Functions used to extract data from arbitrary text files
+"""
 import re
 
 
 def parse_flags(string, startflag, endflag, reflags=re.S):
+    """Extracts raw lines of data within regex flags"""
     pattern = r"{}(.*?){}".format(startflag, endflag)
     return re.search(pattern, string, flags=reflags).group(1)
 
 
 def sanitize_item(string):
+    """Converts datatypes and removes whitespace"""
     string = string.strip()
     intpattern = r'^-?\d+$'
-    floatpattern = r'^(-?\d+(\.\d+)?).(\d\d)$'
+    floatpattern = r'^(-?\d+(\.\d+)?)([^\d](\d\d))?$'
     if re.match(intpattern, string):
         return int(string)
     elif re.match(floatpattern, string):
         match = re.match(floatpattern, string)
-        return float(match.group(1))*10**(int(match.group(3)))
+        if not match.group(4):
+            return float(match.group(1))
+        return float(match.group(1))*10**(int(match.group(4)))
     else:
         return string
 
 
 def sanitize_list(string):
+    """Breaks list of items into python list"""
     dirtylist = string.split()
     cleanlist = []
     for item in dirtylist:
@@ -28,17 +36,26 @@ def sanitize_list(string):
 
 
 def parse_array(string):
+    """Interprets data in form
+        1     2     3
+          #     #     #
+          #     #     #
+          #     #     #
+
+       Found in gaussian files
+    """
+
     lines = string.split("\n")
 #   remove empty lines
     for idx, line in enumerate(lines):
-        if line == "" or re.match("^\s*$", line):
+        if line == "" or re.match(r"^\s*$", line):
             del lines[idx]
 
     d_array = {}
     final_array = []
 
     for idx, line in enumerate(lines):
-        whitespace = re.match("\s*(?!\s)", line).group()
+        whitespace = re.match(r"\s*(?!\s)", line).group()
         if idx == 0:
             title_whitespace = whitespace
             array_index = sanitize_list(line)
@@ -53,7 +70,7 @@ def parse_array(string):
 
     keylist = []
 
-    for key in d_array.keys():
+    for key in d_array:
         try:
             keylist.append(int(key))
         except:
@@ -66,11 +83,19 @@ def parse_array(string):
 
 
 def equiv_line(string, name):
+    """Extracts simple data when there is only one number
+       on the line
+    """
     pattern = r"({}.*?)(\d(.\d*)?).*\n".format(name)
     return re.search(pattern, string).group(2)
 
 
 def multi_equiv_line(string):
+    """Extracts data with multiple declarations on one line
+    Ex.
+    desc1= num1    desc2= num2   desc3=-num3
+    desc4= num4
+    """
     dict_ = {}
     list_ = string.split()
     keys = []
@@ -78,13 +103,13 @@ def multi_equiv_line(string):
     itemmarker = 0
 #   Fixes case where equal sign is not at end of string due to negative number
     new_list = []
-    for i in range(len(list_)):
-        if re.search("=-", list_[i]):
-            tempstring = list_[i].split('=')
+    for item in list_:
+        if re.search("=-", item):
+            tempstring = item.split('=')
             new_list.append(tempstring[0]+'=')
             new_list.append(tempstring[1])
         else:
-            new_list.append(list_[i])
+            new_list.append(item)
     list_ = []
     list_ = new_list
     ###
@@ -105,28 +130,54 @@ def multi_equiv_line(string):
     return dict_
 
 
-def parse_table(string):
+def parse_table(string, titles):
+    """Parses Tables in form
+    ---------------
+    Column Titles
+    ---------------
+    Row 1 Data
+    Row 2 Data
+    ---------------
+    """
     sub_dict = {}
     string = re.split('[-]+\n', string)[-2]
     rows = string.split('\n')[0:-1]
-    titles = ['Center_Number', 'Atomic_Number', 'Atomic_Type', 'X', 'Y', 'Z']
     for ridx, row in enumerate(rows):
         items = row.split()
-        sub_dict['Row{}'.format(ridx)] = {}
+        sub_dict['row{}'.format(ridx)] = {}
         for tidx, title in enumerate(titles):
-            sub_dict['Row{}'.format(ridx)][title] = items[tidx]
+            sub_dict['row{}'.format(ridx)][title] = sanitize_item(items[tidx])
     return sub_dict
 
 
+def dict_filter(olddict, excludekeys):
+    """Makes new dict excluding keys"""
+    return {x: olddict[x] for x in olddict if x not in excludekeys}
+
+
+def dict_snip(olddict, keepkeys):
+    """Makes new dict with only certain keys"""
+    return {x: olddict[x] for x in olddict if x in keepkeys}
+
+
+def dict_del_dupes(main,compare):
+    main = main.copy()
+    for item in compare:
+        if isinstance(item, dict):
+            return dict_del_dupes(main[item],compare[item])
+        else: 
+            for key in compare:
+                if key in main:
+                    del main[key]
+    return main
+
+
 def identity(arg):
+    """Does Nothing"""
     return arg
 
 
 def main_parse(string, startflag, endflag, reflags=re.S, parse_type=identity):
+    """Used to send a string through parseflags and another function"""
     raw_string = parse_flags(string, startflag, endflag, reflags)
     return parse_type(raw_string)
-
-
-def dict_parse(title, string, startflag, endflag, reflags=re.S, parse_type=identity):
-    raw = parse_flags(string, startflag, endflag, reflags)
-    return {title: parse_type(raw)}
