@@ -1,6 +1,8 @@
 """pytables used to store data in HDF5 format"""
+import os
 import tables as tb
 import parsetools as pt
+from main_parse import main_parse
 
 class Molecule(tb.IsDescription):
     """Initializes Molecules Pytable"""
@@ -129,17 +131,39 @@ def detect_exact_molecule(dbfile,atom_dict):
             if ('cart_coords' in dupes['Atoms']) and ('atomic_number' in dupes['Atoms']):
                 #Duplicate Detected
                 return id_
-    print(stored)
-    print('---')
-    print(atom_dict)
-    print('---')
-    print(dupes)
     return 0
 
+def inputfile(filename):
+    if os.path.isfile('./Database.h5') is False:
+        create_database()
 
-def debug_display():
-    """Debug Output"""
     data_file = tb.open_file('Database.h5', mode='a')
-    table = data_file.root.Molecules
-    for row in table:
-        print(row['stoichiometry'])
+    mtable = data_file.root.Molecules
+    atable = data_file.root.Atoms
+    next_id = get_nextid(mtable)
+    id_list = get_idlist(data_file,mtable)
+
+    string = main_parse(filename)
+    if id_list == []:
+        mainstring = string['Molecules'] 
+        substring = string['Atoms']
+        insert_dict(mainstring, mtable, next_id)
+        insert_dict(substring, atable, next_id)
+        inc_nextid(mtable)
+        next_id = get_nextid(mtable)
+
+    for i in id_list:
+        dictt = get_dict(data_file, next_id)
+        iddetected = detect_exact_molecule(data_file,string)
+        if iddetected == 0: 
+            mainstring = string['Molecules'] 
+            substring = string['Atoms']
+            insert_dict(mainstring, mtable, next_id)
+            insert_dict(substring, atable, next_id)
+            next_id = inc_nextid(mtable)
+        else:
+            for item in string:
+                do_nothing = 1
+    data_file.close()
+
+
