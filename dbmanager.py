@@ -30,6 +30,14 @@ def create_database():
     table.attrs.nextid = 1
 
 
+def get_nextid(table):
+    return table.attrs.nextid
+
+
+def inc_nextid(table):
+    table.attrs.nextid += 1
+    return table.attrs.nextid
+
 def insert_dict(json_dict, table, id_number):
     """Converts Json to HDF5 Table"""
     item = json_dict[list(json_dict)[0]]
@@ -58,17 +66,17 @@ def insert_dict(json_dict, table, id_number):
 def clean_coords(carray):
     for idx, coordinate in enumerate(carray[:]):
         if idx == 0: 
-            carray = []
+            array = []
         roundlist = []
         for item in coordinate[0].tolist():
-            roundlist.append(round(item,3))
-        carray.append(roundlist)
- 
-    return carray
+            roundlist.append(round(item,6))
+        array.append(roundlist)
+    return array
 
 
 def get_dict(dbfile, id_number):
     """returns dictionary of values for an id numeber"""
+    finaldict = None
     finaldict = {}
     for table in dbfile.walk_nodes("/", 'Table'):
         finaldict[table.name] = {}
@@ -88,8 +96,8 @@ def get_dict(dbfile, id_number):
     if 'Atoms' in finaldict:
         if 'cart_coords' in finaldict['Atoms']:
             coords = finaldict['Atoms']['cart_coords']
-            coords=clean_coords(coords)
-
+            clean = clean_coords(coords)
+            finaldict['Atoms']['cart_coords'] = clean
     return finaldict
 
 
@@ -102,21 +110,31 @@ def detect_duplicate_molecule(atom_dict, atom_table):
     """
     return 0
 
+def get_idlist(dbfile, table):
+    idlist = []
+    for item in dbfile.get_node(table):
+        idlist.append(item['id_number'])
+    return idlist
+
 def detect_exact_molecule(dbfile,atom_dict):
     #idlist = ???
-    idlist = [1]
+    
+    idlist = []
+    for item in dbfile.root.Molecules:
+        idlist.append(item['id_number'])
     for id_ in idlist:
         stored = get_dict(dbfile,id_)
-        dupes = pt.dict_del_dupes(atom_dict,stored)
-        if 'Atoms' not in dupes:
-            #Duplicate Detected
-            return id_
-        elif ('cart_coords' not in dupes['Atoms']) 
-             and ('atomic_number' not in dupes['Atoms']):
-            #Duplicate Detected
-            return id_
-        else:
-            return 0
+        dupes = pt.dict_dupes(atom_dict,stored)
+        if 'Atoms' in dupes:
+            if ('cart_coords' in dupes['Atoms']) and ('atomic_number' in dupes['Atoms']):
+                #Duplicate Detected
+                return id_
+    print(stored)
+    print('---')
+    print(atom_dict)
+    print('---')
+    print(dupes)
+    return 0
 
 
 def debug_display():

@@ -1,6 +1,7 @@
 """Uses parsetools to convert log files into json files"""
+import re
 import parsetools as pt
-
+import atomconvert as ac
 
 def main_parse(filename, program='autodetect'):
     """sets placeholder values and calls relevant function for filetype"""
@@ -22,10 +23,19 @@ def main_parse(filename, program='autodetect'):
 #   Determine file type
     if program == 'gaussian':
         return gaussian_parse(filename, master_dict)
+    elif program == 'dalton':
+        return dalton_parse(filename, master_dict)
+    elif program == 'molpro':
+        return molpro_parse(filename, master_dict)
     elif program == 'autodetect':
-        if filename.split('.')[-1] == 'log':
-            return gaussian_parse(filename, master_dict)
-
+        extension = filename.split('.')[-1]
+        if extension == 'log':
+            if re.search('dalton',filename):
+                return dalton_parse(filename, master_dict)
+            else:
+                return gaussian_parse(filename, master_dict)
+        elif extension == 'out':
+            return molpro_parse(filename,master_dict)
 
 def gaussian_parse(filename, master_dict=None):
     """Extracts relevant info from gaussian .log files"""
@@ -58,8 +68,8 @@ def gaussian_parse(filename, master_dict=None):
     master_dict['units'] = {}
     unit_dict = master_dict['units']
     unit_dict['rhf_energy'] = 'Units'
-    unit_dict['coordinates'] = {}
-    unit_dict['coordinates']['cart_coords'] = 'Units'
+    unit_dict['Atoms'] = {}
+    unit_dict['Atoms']['cart_coords'] = 'Angstroms'
 
     tablestr = pt.parse_flags(rawfile, r'Coordinates in L301:\s+\n', r'FixB:')
     titles = ['center_number', 'atomic_number', 'atomic_type', 'x', 'y', 'z']
@@ -73,26 +83,99 @@ def gaussian_parse(filename, master_dict=None):
     return master_dict
 
 
-def dalton_parse(filename, main_dict=None):
+def dalton_parse(filename, master_dict=None):
     """Extracts relevant info from dalton files"""
     filename = filename
 
-#    with open(filename, 'r') as logfile:
-#        rawfile = logfile.read()
+    with open(filename, 'r') as logfile:
+        rawfile = logfile.read()
+
+    rawcoords = pt.parse_flags(rawfile, 'Cartesian Coordinates', 'Interatomic separations')
+    atompattern = r'\d\s+(\S+)\s+x'
+    atom_list = re.findall(atompattern, rawcoords)
+    anum_list = []
+    cnum_list = []
+    for idx, item in enumerate(atom_list):
+        anum_list.append(ac.convert(item))
+        cnum_list.append(idx+1)
+
+
+    xp = r'x\s+(\S+)\n'
+    yp = r'y\s+(\S+)\n'
+    zp = r'z\s+(\S+)\n'
+    
+    xcoords = pt.sanitize_items(re.findall(xp, rawcoords))
+    ycoords = pt.sanitize_items(re.findall(yp, rawcoords))
+    zcoords = pt.sanitize_items(re.findall(zp, rawcoords))
+    for basis in [xcoords,ycoords,zcoords]:
+        basis[:] = (round(item,3) for item in basis)
+    coords = []
+    for atom in range(len(atom_list)):
+        coords.append([xcoords[atom], ycoords[atom], zcoords[atom]])
+
 #   Main Data
-    main_dict['coordinates'] = {}
-    coord_dict = main_dict['coordinates']
-    coord_dict['center_number'] = []
-    coord_dict['atomic_number'] = []
-    coord_dict['cart_coords'] = []
+    master_dict['Atoms'] = {}
+    coord_dict = master_dict['Atoms']
+    
+    coord_dict['center_number'] = cnum_list
+    coord_dict['atomic_number'] = anum_list
+    coord_dict['cart_coords'] = coords
 #   Metadata
-    main_dict['timestamp'] = 'PlaceHolder'
+    master_dict['Molecules']= {}
+    main_dict = master_dict['Molecules']
+    
+    timestamp = pt.parse_flags(rawfile, r'Date and time.+:\s+', r'\n',reflags=0)
+    inputstring = pt.parse_flags(rawfile, r'Title lines from integral program:\s*\n\s+',r'\s+\n',reflags=0)
+    main_dict['timestamp'] = timestamp
     main_dict['source'] = 'Dalton'
-    main_dict['inputstring'] = 'PlaceHolder'
+    main_dict['inputstring'] = inputstring
 #   Units
     master_dict['units'] = {}
     unit_dict = master_dict['units']
-    unit_dict['coordinates'] = {}
-    unit_dict['coordinates']['cart_coords'] = 'Units'
+    unit_dict['Atoms'] = {}
+    
+    unit_dict['Atoms']['cart_coords'] = 'Angstroms'
 
-    return main_dict
+    return master_dict
+
+
+def molpro_parse(filename, master_dict=None):
+    """sets placeholder values and calls relevant function for filetype"""
+    with open(filename, 'r') as logfile:
+        rawfile = logfile.read()
+
+#   Main Data
+    master_dict['Molecules'] = {}
+    main_dict = master_dict['Molecules']
+   
+    rhf_energy = pt.parse_flags(rawfile, r'!RHF STATE.*Energy\s+', r'\n', reflags=0)
+    main_dict['rhf_energy'] = pt.sanitize_item(rhf_energy)
+    main_dict['source'] = 'Molpro'
+    
+    label = pt.parse_flags(rawfile, r'LABEL \*\s+', r'\s+\n', reflags=0)
+    main_dict['inputstring'] = label
+    name = label.split()[0]
+    main_dict['stoichiometry'] = name
+
+    timestamp = pt.parse_flags(rawfile, r'(?<=DATE:)',r'\n', reflags=0)
+    main_dict['timestamp'] = timestamp
+
+    master_dict['Atoms'] = {}
+    coord_dict = master_dict['Atoms']
+    coord_table = pt.parse_flags(rawfile, r'NR\s+ATOM\s+CHARGE.*?\n', r'Bond lengths')
+    coord_lines = coord_table.split('\n')
+    
+    cnum_list = []
+    anum_list = []
+    coord_list = []
+    for i in coord_lines:
+        row = pt.sanitize_list(i)
+        if row != []:
+            cnum_list.append(row[0])
+            anum_list.append(row[2])
+            coord_list.append([round(row[3], 6), round(row[4], 6), round(row[5], 6)])
+    coord_dict['center_number'] = cnum_list
+    coord_dict['atomic_number'] = anum_list
+    coord_dict['cart_coords'] = coord_list
+
+    return master_dict
