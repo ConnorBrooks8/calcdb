@@ -129,6 +129,8 @@ def dalton_parse(filename, master_dict=None):
     main_dict['timestamp'] = timestamp
     main_dict['source'] = 'Dalton'
     main_dict['inputstring'] = inputstring
+    name = inputstring.split()[0]
+    main_dict['stoichiometry'] = name
 #   Units
     master_dict['units'] = {}
     unit_dict = master_dict['units']

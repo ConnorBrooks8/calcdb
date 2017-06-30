@@ -1,5 +1,6 @@
 """pytables used to store data in HDF5 format"""
 import os
+import math
 import tables as tb
 import parsetools as pt
 from main_parse import main_parse
@@ -70,6 +71,7 @@ class Database:
 
 
     def detect_exact_molecule(self, atom_dict):
+        """Checks for exactly the same coordinates, in the same order, will be replaced by detect_duplicate_molecule"""
         idlist = self.get_idlist(self.mtable.table) 
         for id_ in idlist:
             stored = self.get_dict(id_)
@@ -82,9 +84,14 @@ class Database:
         return 0
 
 
-    def detect_duplicate_molecule():
-        """detect_exact_molecule, where order of molecules
-        does not matter. if it exists, id_number is returned"""
+    def detect_duplicate_molecule(self, json_dict):
+        """detect_exact_molecule, defines atoms in terms of their distance from the Center of Mass, and checks for a match"""
+        idlist = self.get_idlist(self.mtable.table)
+        for id_ in idlist:
+            stored= self.get_dict(id_)
+            s_dist = self.atom_distances(stored)
+            a_dist = self.atom_distances(json_dict)
+            print(s_dist,'\n',a_dist)
         return 0
 
 
@@ -99,6 +106,7 @@ class Database:
             self.mtable.inc_nextid()
 
         iddetected = self.detect_exact_molecule(json_dict)
+        self.detect_duplicate_molecule(json_dict)
         if iddetected == 0:
             maindict = json_dict['Molecules']
             subdict = json_dict['Atoms']
@@ -107,8 +115,38 @@ class Database:
             self.mtable.inc_nextid()
         else:
             for item in json_dict:
-                do_nothing = 1
+                placeholder = 1
         return 0
+    
+
+    def get_CoM(self, atom_dict):
+        AtomList = atom_dict['Atoms']['atomic_number']
+        CoordList = atom_dict['Atoms']['cart_coords']
+        AtomTuple = list(zip(AtomList,CoordList))
+
+        x = 0
+        y = 0
+        z = 0
+        M = 0
+        for Atom in AtomTuple:
+            m = Atom[0]
+            M += m
+            x += m*Atom[1][0]
+            y += m*Atom[1][1]
+            z += m*Atom[1][2]
+        CoM = [x/M, y/M, z/M]
+        return CoM
+
+    def atom_distances(self, atom_dict):
+        atoms = atom_dict['Atoms']['atomic_number']
+        coords = atom_dict['Atoms']['cart_coords']
+        atom_tuple = list(zip(atoms, coords))
+        CoM = self.get_CoM(atom_dict)
+        Distances = []
+        for atom in atom_tuple:
+            d = math.sqrt((atom[1][0]-CoM[0])**2+(atom[1][1]-CoM[1])**2+(atom[1][2]-CoM[2])**2)
+            Distances.append((atom[0], d))
+        return Distances
 
 
     def close(self):
@@ -159,6 +197,16 @@ class dbTable:
         
         self.table.flush()
 
+
+    def get_id(self, name):
+        ids = [row['id_number'] for row in self.table.iterrows() if row['stoichiometry'] == name]
+        print([row['stoichiometry'] for row in self.table.iterrows()])
+        print(b'H2O' == 'H2O')
+        if len(ids) == 1:
+            return ids[0]
+        else:
+            print("Multiple possible id's detected: ", ids)
+            return -1
 
 def clean_coords(carray):
     for idx, coordinate in enumerate(carray[:]):
