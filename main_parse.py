@@ -79,7 +79,7 @@ def gaussian_parse(filename, master_dict=None):
         coord_dict['center_number'].append(row['center_number'])
         coord_dict['atomic_number'].append(row['atomic_number'])
         coord_dict['cart_coords'].append([row['x'], row['y'], row['z']])
-
+    main_dict['n_atoms'] = len(coord_dict['atomic_number'])
     return master_dict
 
 
@@ -131,6 +131,7 @@ def dalton_parse(filename, master_dict=None):
     main_dict['inputstring'] = inputstring
     name = inputstring.split()[0]
     main_dict['stoichiometry'] = name
+    main_dict['n_atoms'] = len(anum_list)
 #   Units
     master_dict['units'] = {}
     unit_dict = master_dict['units']
@@ -178,6 +179,7 @@ def molpro_parse(filename, master_dict=None):
             coord_list.append([round(row[3], 6), round(row[4], 6), round(row[5], 6)])
     coord_dict['center_number'] = cnum_list
     coord_dict['atomic_number'] = anum_list
+    main_dict['n_atoms'] = len(anum_list)
     coord_dict['cart_coords'] = coord_list
 
     return master_dict

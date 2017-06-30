@@ -1,6 +1,7 @@
 """pytables used to store data in HDF5 format"""
 import os
 import math
+from collections import Counter
 import tables as tb
 import parsetools as pt
 from main_parse import main_parse
@@ -13,6 +14,7 @@ class MoleClass(tb.IsDescription):
     source = tb.StringCol(32)
     timestamp = tb.StringCol(32)
     inputstring = tb.StringCol(32)
+    n_atoms = tb.UInt8Col()
 
 class AtomClass(tb.IsDescription):
     """Initializes atoms table"""
@@ -70,28 +72,17 @@ class Database:
         return idlist
 
 
-    def detect_exact_molecule(self, atom_dict):
-        """Checks for exactly the same coordinates, in the same order, will be replaced by detect_duplicate_molecule"""
-        idlist = self.get_idlist(self.mtable.table) 
-        for id_ in idlist:
-            stored = self.get_dict(id_)
-            dupes = pt.dict_dupes(atom_dict, stored)
-            if 'Atoms' in dupes:
-                if ('cart_coords' in dupes['Atoms']) and ('atomic_number' in dupes['Atoms']):
-                    #Duplicate
-                    return id_
-        
-        return 0
-
-
     def detect_duplicate_molecule(self, json_dict):
         """detect_exact_molecule, defines atoms in terms of their distance from the Center of Mass, and checks for a match"""
-        idlist = self.get_idlist(self.mtable.table)
+        idlist = [row['id_number'] for row in self.mtable.table.iterrows() if row['n_atoms'] == json_dict['Molecules']['n_atoms']]
         for id_ in idlist:
             stored= self.get_dict(id_)
-            s_dist = self.atom_distances(stored)
-            a_dist = self.atom_distances(json_dict)
-            print(s_dist,'\n',a_dist)
+            if sorted(stored['Atoms']['atomic_number']) == json_dict['Atoms']['atomic_number']:
+                s_dist = self.atom_distances(stored)
+                a_dist = self.atom_distances(json_dict)
+                dupes = pt.dict_dupes(s_dist,a_dist)
+                if dupes:
+                    return id_
         return 0
 
 
@@ -105,8 +96,7 @@ class Database:
             self.atable.insert_dict(subdict, self.mtable.get_nextid())
             self.mtable.inc_nextid()
 
-        iddetected = self.detect_exact_molecule(json_dict)
-        self.detect_duplicate_molecule(json_dict)
+        iddetected = self.detect_duplicate_molecule(json_dict)
         if iddetected == 0:
             maindict = json_dict['Molecules']
             subdict = json_dict['Atoms']
@@ -146,7 +136,7 @@ class Database:
         for atom in atom_tuple:
             d = math.sqrt((atom[1][0]-CoM[0])**2+(atom[1][1]-CoM[1])**2+(atom[1][2]-CoM[2])**2)
             Distances.append((atom[0], d))
-        return Distances
+        return Counter(Distances)
 
 
     def close(self):
