@@ -4,6 +4,7 @@ Various Functions used to extract data from arbitrary text files
 import re
 import copy
 
+
 def parse_flags(string, startflag, endflag, reflags=re.S):
     """Extracts raw lines of data within regex flags"""
     pattern = r"{}(.*?){}".format(startflag, endflag)
@@ -25,11 +26,14 @@ def sanitize_item(string):
     else:
         return string
 
+
 def sanitize_items(list_):
+    """runs sanitize_item for a list"""
     newlist = []
     for item in list_:
         newlist.append(sanitize_item(item))
     return newlist
+
 
 def sanitize_list(string):
     """Breaks list of items into python list"""
@@ -38,6 +42,7 @@ def sanitize_list(string):
     for item in dirtylist:
         cleanlist.append(sanitize_item(item))
     return cleanlist
+
 
 def parse_array(string):
     """Interprets data in form
@@ -164,22 +169,23 @@ def dict_snip(olddict, keepkeys):
     return {x: olddict[x] for x in olddict if x in keepkeys}
 
 
-def dict_dupes(main,compare):
-    """returns a dictionary of the duplicate values of two input dictionaries. Can work with nested dictionaries. Assumes that values of the same key will also be the same type."""
-    def recursivedelete(main,compare,duplicates):
+def dict_dupes(main, compare):
+    """returns a dictionary of the duplicate values of two input dictionaries. Can work with nested dictionaries.
+    Assumes that values of the same key will also be the same type."""
+    def recursivedelete(main, compare, duplicates):
         for item in compare:
             if item in main:
-                if isinstance(main[item],dict):
+                if isinstance(main[item], dict):
                     duplicates[item] = {}
-                    recursivedelete(main[item],compare[item],duplicates[item])
+                    recursivedelete(main[item], compare[item], duplicates[item])
                 else:
                     if main[item] == compare[item]:
                         duplicates[item] = main[item]
- 
+
     localmain = copy.deepcopy(main)
     duplicates = None
     duplicates = {}
-    recursivedelete(localmain,compare,duplicates)
+    recursivedelete(localmain, compare, duplicates)
     return duplicates
 
 

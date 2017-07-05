@@ -37,6 +37,7 @@ def main_parse(filename, program='autodetect'):
         elif extension == 'out':
             return molpro_parse(filename,master_dict)
 
+
 def gaussian_parse(filename, master_dict=None):
     """Extracts relevant info from gaussian .log files"""
     filename = filename
@@ -174,8 +175,8 @@ def molpro_parse(filename, master_dict=None):
     for i in coord_lines:
         row = pt.sanitize_list(i)
         if row != []:
-            cnum_list.append(row[0])
-            anum_list.append(row[2])
+            cnum_list.append(int(row[0]))
+            anum_list.append(int(row[2]))
             coord_list.append([round(row[3], 6), round(row[4], 6), round(row[5], 6)])
     coord_dict['center_number'] = cnum_list
     coord_dict['atomic_number'] = anum_list
