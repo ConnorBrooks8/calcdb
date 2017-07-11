@@ -15,7 +15,7 @@ def sanitize_item(string):
     """Converts datatypes and removes whitespace"""
     string = string.strip()
     intpattern = r'^-?\d+$'
-    floatpattern = r'^(-?\d+(\.\d+)?)([^\d](\d\d))?$'
+    floatpattern = r'^(-?\d+(\.\d+)?)([^\d]([+-]?\d\d))?$'
     if re.match(intpattern, string):
         return int(string)
     elif re.match(floatpattern, string):

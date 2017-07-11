@@ -7,7 +7,7 @@ import parsetools as pt
 from main_parse import main_parse
 
 error = 0.01
-
+rounding = 3
 
 class MoleClass(tb.IsDescription):
     """initializes molecules table"""
@@ -80,9 +80,16 @@ class Database:
             stored = self.get_dict(id_)
 
             if sorted(stored['Atoms']['atomic_number']) == sorted(json_dict['Atoms']['atomic_number']):
+                dupes = True
                 s_dist = self.atom_distances(stored)
                 a_dist = self.atom_distances(json_dict)
-                dupes = pt.dict_dupes(s_dist, a_dist)
+                
+                for atom in s_dist:
+                    s_list = sorted(s_dist[atom])
+                    a_list = sorted(a_dist[atom])
+                    for i in range(len(s_list)):
+                        if not equiv(s_list[i], a_list[i], error):
+                            dupes = False
                 if dupes:
                     return id_
         return 0
@@ -105,7 +112,7 @@ class Database:
 
     def insert_dict(self, json_dict, id_=0):
         if id_ == 0:
-            id_ == self.mtable.get_nextid()
+            id_ = self.mtable.get_nextid()
             self.mtable.inc_nextid()
         if 'Molecules' in json_dict:
             maindict = json_dict['Molecules']
@@ -138,11 +145,14 @@ class Database:
         coords = atom_dict['Atoms']['cart_coords']
         atom_tuple = list(zip(atoms, coords))
         CoM = self.get_CoM(atom_dict)
-        distances = []
+        distances = None
+        distances = {}
         for atom in atom_tuple:
+            if str(atom[0] )not in distances:
+                distances[str(atom[0])] = []
             d = math.sqrt((atom[1][0]-CoM[0])**2+(atom[1][1]-CoM[1])**2+(atom[1][2]-CoM[2])**2)
-            distances.append((atom[0], d))
-        return Counter(distances)
+            distances[str(atom[0])].append(d)
+        return distances
 
     def close(self):
         self.datafile.close()
@@ -196,6 +206,20 @@ class dbTable:
         else:
             print("Multiple possible id's detected: ", ids)
             return -1
+
+    def remove_row(self, pytablesid):
+        self.table.remove_row(pytablesid)
+
+    def get_pyid(self, molid):
+        idlist = [x.nrow for x in self.table.where("""id_number == {}""".format(molid))]
+        return(idlist)
+
+    def remove_pyid(self, molid):
+        pyids = self.get_pyid(molid)
+        print(pyids)
+        for id_ in pyids:
+            self.remove_row(id_)
+            self.table.flush()
 
 
 def clean_coords(carray):

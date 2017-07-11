@@ -21,8 +21,10 @@ def main_parse(filename, program='autodetect'):
     coord_dict['cart_coords'] = 'Found in Gaussian,Molpro,Dalton files'
 
 #   Determine file type
-    if program == 'gaussian':
+    if program == 'gaussian_log':
         return gaussian_parse(filename, master_dict)
+    elif program == 'gaussian_fchk':
+        return fchk_parse(filename, master_dict)
     elif program == 'dalton':
         return dalton_parse(filename, master_dict)
     elif program == 'molpro':
@@ -36,6 +38,8 @@ def main_parse(filename, program='autodetect'):
                 return gaussian_parse(filename, master_dict)
         elif extension == 'out':
             return molpro_parse(filename,master_dict)
+        elif extension == 'fchk':
+            return fchk_parse(filename, master_dict)
 
 
 def gaussian_parse(filename, master_dict=None):
@@ -184,3 +188,69 @@ def molpro_parse(filename, master_dict=None):
     coord_dict['cart_coords'] = coord_list
 
     return master_dict
+
+
+def fchk_parse(filename,master_dict=None):
+    parsed_fchk = raw_fchk_parse(filename)
+    #   Set PlaceHolder values
+    master_dict = {}
+#   Main Data
+    master_dict['Molecules'] = {}
+    main_dict = master_dict['Molecules']
+    main_dict['rhf_energy'] = None
+    main_dict['stoichiometry'] = parsed_fchk['stoichiometry']
+    
+    main_dict['n_atoms'] = parsed_fchk['Number of atoms'][0]
+
+    master_dict['Atoms'] = {}
+    coord_dict = master_dict['Atoms']
+    
+    coord_dict['atomic_number'] = parsed_fchk['Atomic numbers']
+    coord_dict['center_number'] = [x+1 for x in range(len(coord_dict['atomic_number']))]
+    
+    
+    coordlist = parsed_fchk['Current cartesian coordinates']
+    cart_coords = [coordlist[x:x+3] for x in range(int(len(coordlist)/3))]
+    coord_dict['cart_coords'] = cart_coords
+
+    return master_dict
+
+def raw_fchk_parse(filename):
+    with open(filename, "r") as File:
+        lines = File.read().split("\n")
+    header = lines[0:2]
+    stoichiometry = re.search(r'[A-Z0-9]+', header[0]).group(0)
+    lines = lines[2:]
+
+    expression = r"(?:\s{2,})|(?:\s(?=-))"
+
+    splitlines=[]
+    for line in lines:
+        cleanlist=[]
+        uncleanlist = re.split(expression,line)
+        for item in uncleanlist:
+            if item != "":
+                cleanlist.append(item.strip())
+    
+        splitlines.append(cleanlist)
+
+
+    mergedlines=[]
+    expression= r"[-?0-9]"
+
+    for line in splitlines:
+        if line != []:
+            if re.match(expression,line[0]):
+                mergedlines[-1].extend(line)
+            else:
+                mergedlines.append(line)
+   
+    final = {}
+    final['stoichiometry'] = stoichiometry
+    for line in mergedlines:
+        Tag = line[0]
+        if line[2] == "N=":
+            del line[2:4]
+        Data = pt.sanitize_items(line[2:])
+        final[Tag] = Data
+    return final
