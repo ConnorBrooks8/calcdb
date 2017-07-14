@@ -1,200 +1,253 @@
-"""
-Various Functions used to extract data from arbitrary text files
-"""
+"""Functions for extracting the appropriate data from strings with different formats."""
 import re
-import copy
 
 
-def parse_flags(string, startflag, endflag, reflags=re.S):
-    """Extracts raw lines of data within regex flags"""
+def parse_flags(data, startflag, endflag, reflags=re.DOTALL):
+    """Extract the raw strings between the start and end flags.
+
+    Parameters
+    ----------
+    data : str
+    startflag : str
+        Regular expression pattern that will be used to identify the start of the desired info
+    endflag : str
+        Regular expression pattern that will be used to identify the end of the desired info
+    reflags : int
+        Flags used in the regular expression search
+        Default is re.DOTALL, which results in "." matching all possible characters.
+    """
+    # .*? results in non-greedy/minimal match
     pattern = r"{}(.*?){}".format(startflag, endflag)
-    return re.search(pattern, string, flags=reflags).group(1)
+    return re.search(pattern, data, flags=reflags).group(1)
 
 
-def sanitize_item(string):
-    """Converts datatypes and removes whitespace"""
-    string = string.strip()
+def sanitize_item(item):
+    """Convert itemtypes and removes whitespace.
+
+    Parameters
+    ----------
+    item : str
+    """
+    item = item.strip()
     intpattern = r'^-?\d+$'
-    floatpattern = r'^(-?\d+(\.\d+)?)([^\d]([+-]?\d\d))?$'
-    if re.match(intpattern, string):
-        return int(string)
-    elif re.match(floatpattern, string):
-        match = re.match(floatpattern, string)
+    # NOTE: is the float pattern too generous? specifically the [^\d] part
+    floatpattern = r'^(-?\d+(\.\d*)?)([^\d]([+-]?\d\d))?$'
+    if re.match(intpattern, item):
+        return int(item)
+    elif re.match(floatpattern, item):
+        match = re.match(floatpattern, item)
         if not match.group(4):
             return float(match.group(1))
-        return float(match.group(1))*10**(int(match.group(4)))
+        return float(match.group(1)) * 10**(int(match.group(4)))
     else:
-        return string
+        return item
 
 
-def sanitize_items(list_):
-    """runs sanitize_item for a list"""
-    newlist = []
-    for item in list_:
-        newlist.append(sanitize_item(item))
-    return newlist
+def sanitize_items(items):
+    """Sanitize each item in the list.
+
+    Parameter
+    ---------
+    items : list of str
+    """
+    return [sanitize_item(item) for item in items]
 
 
-def sanitize_list(string):
-    """Breaks list of items into python list"""
-    dirtylist = string.split()
-    cleanlist = []
-    for item in dirtylist:
-        cleanlist.append(sanitize_item(item))
-    return cleanlist
+def sanitize_list(string_cols):
+    """Sanitize each item in a tab/space separated string
+
+    string_cols : str
+        Tab or space separated strings
+    """
+    return [sanitize_item(item) for item in string_cols.split()]
 
 
-def parse_array(string):
-    """Interprets data in form
+def parse_array(data):
+    """Extract Gaussian table.
+
+    Of form:
         1     2     3
-          #     #     #
-          #     #     #
-          #     #     #
+    1      #     #     #
+    2      #     #     #
+    3      #     #     #
 
-       Found in gaussian files
+    Parameters
+    ----------
+    data : str
     """
 
-    lines = string.split("\n")
-#   remove empty lines
-    for idx, line in enumerate(lines):
-        if line == "" or re.match(r"^\s*$", line):
-            del lines[idx]
+    lines = data.split("\n")
 
-    d_array = {}
-    final_array = []
+    subarrays = []
+    num_cols = None
 
     for idx, line in enumerate(lines):
-        whitespace = re.match(r"\s*(?!\s)", line).group()
-        if idx == 0:
-            title_whitespace = whitespace
-            array_index = sanitize_list(line)
-        elif whitespace == title_whitespace:
-            array_index = line.split()
+        if re.match(r"^\s*$", line):
+            continue
+
+        cols = sanitize_list(line)
+        # if indices
+        if num_cols is None or len(cols) < num_cols:
+            indices = cols
+            subarrays.append([])
+        # if numbers
         else:
-            line = sanitize_list(line)
-            for idx, item in enumerate(reversed(array_index)):
-                if item not in d_array:
-                    d_array[item] = []
-                d_array[item].append(line[-(idx+1)])
+            subarrays[-1].append(cols[-len(indices):])
+        num_cols = len(cols)
 
-    keylist = []
-
-    for key in d_array:
-        try:
-            keylist.append(int(key))
-        except:
-            return d_array
-
-    for key in sorted(keylist):
-        final_array.append(d_array[str(key)])
+    # stack each sub array columnwise
+    final_array = subarrays[0]
+    for subarray in subarrays[1:]:
+        for i, row in enumerate(subarray):
+            final_array[i].extend(row)
 
     return final_array
 
 
 def equiv_line(string, name):
-    """Extracts simple data when there is only one number
-       on the line
+    """Extract simple data when there is only one number on the line.
     """
     pattern = r"({}.*?)(\d(.\d*)?).*\n".format(name)
     return re.search(pattern, string).group(2)
 
 
-def multi_equiv_line(string):
-    """Extracts data with multiple declarations on one line
+def multi_equiv_line(data):
+    """Extract data with multiple declarations.
+
     Ex.
     desc1= num1    desc2= num2   desc3=-num3
     desc4= num4
+
+    Parameters
+    ----------
+    data : str
+        Input string
+
+    Returns
+    -------
+    Dictionary of the key and value of the declarations.
     """
-    dict_ = {}
-    list_ = string.split()
-    keys = []
-    values = []
-    itemmarker = 0
-#   Fixes case where equal sign is not at end of string due to negative number
-    new_list = []
-    for item in list_:
-        if re.search("=-", item):
-            tempstring = item.split('=')
-            new_list.append(tempstring[0]+'=')
-            new_list.append(tempstring[1])
-        else:
-            new_list.append(item)
-    list_ = []
-    list_ = new_list
-    ###
-
-    for i in range(len(list_)):
-        if list_[i][-1] == "=":
-            if i == 0:
-                temp_list = list_[0].strip('=')
-            else:
-                temp_list = list_[itemmarker:(i-1)]
-                temp_list.append(list_[i].strip('='))
-            itemmarker = i+1
-            keys.append("".join(temp_list))
-            values.append(list_[i+1])
-            i = i+2
-    for idx, key in enumerate(keys):
-        dict_[key] = values[idx]
-    return dict_
+    pattern = r'\s*(.+?)\s*=\s*(.+?)\s+'
+    # space needs to be added to string b/c pattern for the value is terminated by whitespace
+    declarations = re.findall(pattern, data + ' ')
+    return {key: val for key, val in declarations}
 
 
-def parse_table(string, titles):
-    """Parses Tables in form
+def parse_table(data, titles):
+    """Parse table.
+
+    Ex.
     ---------------
     Column Titles
     ---------------
-    Row 1 Data
-    Row 2 Data
+    Row1 Data Data
+    Row2 Data Data
     ---------------
+
+    Parameters
+    ----------
+    data : str
+        String that contains the data table
+    titles : list of str
+        Labels of each column
+
+    Returns
+    -------
+    sub_dict : dict of dict
+        Dictionary of the row name and the column name to the data
     """
     sub_dict = {}
-    string = re.split('[-]+\n', string)[-2]
-    rows = string.split('\n')[0:-1]
+    data = re.split('[-=\*\+]+\n', data)[-2]
+    rows = data.strip().split('\n')
     for ridx, row in enumerate(rows):
-        items = row.split()
-        sub_dict['row{}'.format(ridx)] = {}
-        for tidx, title in enumerate(titles):
-            sub_dict['row{}'.format(ridx)][title] = sanitize_item(items[tidx])
+        items = sanitize_list(row)
+        sub_dict['row{}'.format(ridx)] = {title: items[i] for i, title in enumerate(titles)}
     return sub_dict
 
 
 def dict_filter(olddict, excludekeys):
-    """Makes new dict excluding keys"""
-    return {x: olddict[x] for x in olddict if x not in excludekeys}
+    """Return a dictionary without the given key.
+
+    Parameters
+    ----------
+    olddict : dict
+        Dictionary from which the keys are removed
+    excludekeys : list
+        List of the keys of the dictionary that will be excluded
+
+    Returns
+    -------
+    newdict : dict
+        Dictionary with the appropriate keys removed
+    """
+    return {key: val for key, val in olddict.items() if key not in excludekeys}
 
 
 def dict_snip(olddict, keepkeys):
-    """Makes new dict with only certain keys"""
-    return {x: olddict[x] for x in olddict if x in keepkeys}
+    """Return a dictionary using only the given keys.
+
+    Parameters
+    ----------
+    olddict : dict
+        Dictionary from which the keys are obtained
+    keepkeys : list
+        List of the keys of the dictionary that will be included
+
+    Returns
+    -------
+    newdict : dict
+        Dictionary with only the appropriate keys
+    """
+    # FIXME: following is faster if key in keeykeys is always present in olddict
+    # return {key: olddict[key] for key in keepkeys}
+    return {key: val for key, val in olddict.items() if key in keepkeys}
 
 
-def dict_dupes(main, compare):
-    """returns a dictionary of the duplicate values of two input dictionaries. Can work with nested dictionaries.
-    Assumes that values of the same key will also be the same type."""
-    def recursivedelete(main, compare, duplicates):
-        for item in compare:
-            if item in main:
-                if isinstance(main[item], dict):
-                    duplicates[item] = {}
-                    recursivedelete(main[item], compare[item], duplicates[item])
-                else:
-                    if main[item] == compare[item]:
-                        duplicates[item] = main[item]
+def dict_dupes(dict_one, dict_two, duplicates=None):
+    """Return a dictionary of the keys that are shared between two dictionarys.
 
-    localmain = copy.deepcopy(main)
-    duplicates = None
-    duplicates = {}
-    recursivedelete(localmain, compare, duplicates)
+    Works with nested dictionaries.
+
+    Parameters
+    ----------
+    dict_one : dict
+    dict_two : dict
+    """
+    if duplicates is None:
+        duplicates = {}
+
+    for key, val in dict_two.items():
+        if key not in dict_one:
+            continue
+        if isinstance(dict_one[key], dict):
+            duplicates[key] = {}
+            dict_dupes(dict_one[key], val, duplicates[key])
+        elif dict_one[key] == val:
+            duplicates[key] = val
+
     return duplicates
 
 
-def identity(arg):
-    """Does Nothing"""
-    return arg
+def main_parse(string, startflag, endflag, reflags=re.DOTALL, parse_type=lambda x: x):
+    """Parses the string between the start and end flag using the given parser.
 
+    Parameters
+    ----------
+    data : str
+    startflag : str
+        Regular expression pattern that will be used to identify the start of the desired info
+    endflag : str
+        Regular expression pattern that will be used to identify the end of the desired info
+    reflags : int
+        Flags used in the regular expression search
+        Default is re.DOTALL, which results in "." matching all possible characters.
+    parse_type : function
+        Parsing function
+        Default is no additional parsing (i.e. returns selected string)
 
-def main_parse(string, startflag, endflag, reflags=re.S, parse_type=identity):
-    """Used to send a string through parseflags and another function"""
-    raw_string = parse_flags(string, startflag, endflag, reflags)
-    return parse_type(raw_string)
+    Returns
+    -------
+    output
+        Output of the parser.
+    """
+    return parse_type(parse_flags(string, startflag, endflag, reflags))
